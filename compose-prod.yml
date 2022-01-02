@@ -1,0 +1,111 @@
+version: "3.7"
+
+services:
+
+  double-check-api-database:
+    security_opt:
+      - no-new-privileges:true
+    container_name: double-check-api-database
+    image: dev-vivo.servehttp.com:5000/double-check-api-database:master
+    ports:
+      - 3317:3306
+    expose:
+      - "3306"
+    environment:
+      MYSQL_USER: devVivoApiDb
+      MYSQL_PASSWORD: passDevVivoApiDb
+      MYSQL_DATABASE: double-check-api
+      MYSQL_ROOT_PASSWORD: "123"
+    command: --innodb_use_native_aio=0 --socket=/tmp/mysql.sock --bind_address=0.0.0.0
+    networks:
+      - proxy
+
+  double-check-api:
+    security_opt:
+      - no-new-privileges:true
+    container_name: double-check-api
+    image: dev-vivo.servehttp.com:5000/double-check-api:master
+    env_file: ../double-check-api/.env.test
+    depends_on:
+      - double-check-api-database
+    environment:
+      - ENVIRONMENT=PRODUCTION
+    command: bash -c 'while !</dev/tcp/double-check-api-database/3306; do sleep 1; done; npm start'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.double-check-api-secure.entrypoints=websecure"
+      - "traefik.http.routers.double-check-api-secure.rule=Host(`api.doublecheck-app.tech`)"
+      - "traefik.http.routers.double-check-api-secure.service=double-check-api"
+      - "traefik.http.services.double-check-api.loadbalancer.server.port=3333"
+    networks:
+      - proxy
+
+
+  zeus-service-database:
+    security_opt:
+      - no-new-privileges:true
+    container_name: zeus-service-database
+    image: dev-vivo.servehttp.com:5000/zeus-service-database:master
+    ports:
+      - 3318:3306
+    expose:
+      - "3306"
+    volumes:
+      - ../zeus-service/db:/var/lib/mysql
+    environment:
+      MYSQL_USER: zeus-service
+      MYSQL_PASSWORD: zeus-service
+      MYSQL_DATABASE: zeus-service
+      MYSQL_ROOT_PASSWORD: "123"
+    command: --innodb_use_native_aio=0 --socket=/tmp/mysql.sock --bind_address=0.0.0.0
+    networks:
+      - proxy
+    
+
+
+  zeus-service:
+    security_opt:
+      - no-new-privileges:true
+    container_name: zeus-service
+    image: dev-vivo.servehttp.com:5000/zeus-service:master
+    env_file: ../zeus-service/.env.test
+    depends_on:
+      - zeus-service-database
+    volumes:
+      - "../zeus-service/base:/app/base"
+    environment:
+      - ENVIRONMENT=PRODUCTION
+    command: bash -c 'while !</dev/tcp/double-check-api-database/3306; do sleep 1; done; npm run test'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.zeus-service-secure.entrypoints=websecure"
+      - "traefik.http.routers.zeus-service-secure.rule=Host(`zeus.doublecheck-app.tech`)"
+      - "traefik.http.routers.zeus-service-secure.service=zeus-service"
+      - "traefik.http.services.zeus-service.loadbalancer.server.port=3334"
+    networks:
+      - proxy
+
+  
+  double-check-app:
+    security_opt:
+      - no-new-privileges:true
+    container_name: double-check-app
+    image: dev-vivo.servehttp.com:5000/double-check-app:master
+    env_file: ../double-check-app/.env.test
+    environment:
+      - ENVIRONMENT=PRODUCTION
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.double-check-app-secure.entrypoints=websecure"
+      - "traefik.http.routers.double-check-app-secure.rule=Host(`app.doublecheck-app.tech`)"
+      - "traefik.http.routers.double-check-app-secure.service=double-check-app"
+      - "traefik.http.services.double-check-app.loadbalancer.server.port=9000"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
